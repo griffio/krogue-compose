@@ -70,6 +70,8 @@ fun StatsPanel(game: GameState, modifier: Modifier = Modifier) {
             }
             StatLine("HP", "${game.hp}/${game.maxHp}", hpColor)
             MonoLabel(healthBar(game.hp, game.maxHp), hpColor)
+            StatLine("MP", "${game.mp}/${game.maxMp}", TerminalTheme.Mana)
+            MonoLabel(healthBar(game.mp, game.maxMp), TerminalTheme.Mana)
             Spacer(Modifier.height(2.dp))
             StatLine("Gold", "${game.gold}", TerminalTheme.Warn)
             StatLine("Slain", "${game.kills}", TerminalTheme.Foreground)

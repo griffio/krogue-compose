@@ -37,6 +37,10 @@ class GameState(private val random: Random = Random.Default) {
         private set
     var hp: Int by mutableStateOf(20)
         private set
+    var maxMp: Int by mutableStateOf(MAX_MANA)
+        private set
+    var mp: Int by mutableStateOf(MAX_MANA)
+        private set
     var gold: Int by mutableStateOf(0)
         private set
     var depth: Int by mutableStateOf(1)
@@ -82,10 +86,82 @@ class GameState(private val random: Random = Random.Default) {
 
     fun monsterAt(x: Int, y: Int): Monster? = monsters.firstOrNull { it.x == x && it.y == y }
 
+    /** Monsters the hero can currently see, the only valid spell targets. */
+    val visibleMonsters: List<Monster> get() = monsters.filter { isVisible(it.x, it.y) }
+
+    /** The closest visible monster to the hero, or null if none are in sight. */
+    fun nearestVisibleMonster(): Monster? =
+        visibleMonsters.minByOrNull { abs(it.x - heroX) + abs(it.y - heroY) }
+
+    /** The next visible monster after [after], wrapping around; for Tab-cycling. */
+    fun cycleTarget(after: Monster?): Monster? {
+        val vis = visibleMonsters
+        if (vis.isEmpty()) return null
+        val idx = vis.indexOf(after)
+        return vis[(idx + 1) % vis.size]
+    }
+
+    fun canCast(spell: Spell): Boolean = status == GameStatus.PLAYING && mp >= spell.cost
+
+    /**
+     * Cast [spell] at [target]. Resolves instantly: trace the line of fire to the
+     * first wall (a fizzle) or first monster, apply damage (single-target, or
+     * everything within the spell's radius for an area blast), spend mana, and
+     * emit the bolt event for the effects layer to animate. Then the turn ends.
+     */
+    fun cast(spell: Spell, target: Monster) {
+        if (status != GameStatus.PLAYING) return
+        if (mp < spell.cost) {
+            log("Not enough mana for ${spell.displayName}.")
+            return
+        }
+        mp -= spell.cost
+
+        val (impactX, impactY, struck) = trace(target.x, target.y)
+        onEvent?.invoke(GameEvent.Bolt(heroX, heroY, impactX, impactY, spell.kind, spell.aoeRadius))
+
+        if (spell.aoeRadius > 0) {
+            val caught = monsters.filter {
+                abs(it.x - impactX) <= spell.aoeRadius && abs(it.y - impactY) <= spell.aoeRadius
+            }
+            if (caught.isEmpty()) {
+                log("Your ${spell.displayName} scorches empty stone.")
+            } else {
+                log("Your ${spell.displayName} erupts!")
+                for (m in caught) damageMonster(m, spell.damage)
+            }
+        } else if (struck != null) {
+            log("Your ${spell.displayName} strikes the ${struck.kind.displayName}.")
+            damageMonster(struck, spell.damage)
+        } else {
+            log("Your ${spell.displayName} fizzles against the wall.")
+        }
+
+        turn++
+        endTurn()
+    }
+
+    /**
+     * Walk the bolt's path from the hero toward (tx, ty), stopping at the first
+     * monster (returned) or the first opaque wall. Returns the impact cell and
+     * the monster hit, if any.
+     */
+    private fun trace(tx: Int, ty: Int): Triple<Int, Int, Monster?> {
+        val path = lineOfFire(heroX, heroY, tx, ty)
+        for (i in 1 until path.size) {
+            val (x, y) = path[i]
+            monsterAt(x, y)?.let { return Triple(x, y, it) }
+            if (dungeon.terrainAt(x, y).opaque) return Triple(x, y, null)
+        }
+        return Triple(tx, ty, monsterAt(tx, ty))
+    }
+
     fun startNewGame() {
         depth = 1
         maxHp = 20
         hp = 20
+        maxMp = MAX_MANA
+        mp = MAX_MANA
         gold = 0
         turn = 0
         kills = 0
@@ -151,18 +227,27 @@ class GameState(private val random: Random = Random.Default) {
         endTurn()
     }
 
-    /** Resolve one hero strike against [foe], logging and reaping on kill. */
+    /** Resolve one hero melee strike against [foe]. */
     private fun heroAttack(foe: Monster) {
         val dmg = heroDamage
-        foe.hp -= dmg
-        onEvent?.invoke(GameEvent.Hit(foe.x, foe.y, dmg, HitTarget.MONSTER))
-        if (foe.hp <= 0) {
-            monsters.remove(foe)
+        val killed = damageMonster(foe, dmg)
+        if (!killed) log("You hit the ${foe.kind.displayName}. (-$dmg)")
+    }
+
+    /**
+     * Apply [dmg] to [monster], floating the number and reaping it on death.
+     * Shared by melee and spells. Returns true if the monster died.
+     */
+    private fun damageMonster(monster: Monster, dmg: Int): Boolean {
+        monster.hp -= dmg
+        onEvent?.invoke(GameEvent.Hit(monster.x, monster.y, dmg, HitTarget.MONSTER))
+        if (monster.hp <= 0) {
+            monsters.remove(monster)
             kills++
-            log("You slay the ${foe.kind.displayName}.")
-        } else {
-            log("You hit the ${foe.kind.displayName}. (-$dmg)")
+            log("The ${monster.kind.displayName} is destroyed.")
+            return true
         }
+        return false
     }
 
     private fun damageHero(amount: Int, x: Int, y: Int) {
@@ -170,8 +255,9 @@ class GameState(private val random: Random = Random.Default) {
         onEvent?.invoke(GameEvent.Hit(x, y, amount, HitTarget.HERO))
     }
 
-    /** Monsters act, then we settle death and visibility. */
+    /** Monsters act, mana trickles back, then we settle death and visibility. */
     private fun endTurn() {
+        mp = (mp + MANA_REGEN).coerceAtMost(maxMp)
         if (hp <= 0) {
             die()
             recomputeFov()
@@ -282,6 +368,9 @@ class GameState(private val random: Random = Random.Default) {
         )
     }
 
+    /** Push a UI-originated message (e.g. "no target") into the same log stream. */
+    fun announce(message: String) = log(message)
+
     private fun log(message: String) {
         messages.add(message)
         if (messages.size > MAX_MESSAGES) messages.removeAt(0)
@@ -299,6 +388,8 @@ class GameState(private val random: Random = Random.Default) {
     companion object {
         const val FOV_RADIUS = 8
         const val MAX_DEPTH = 5
+        const val MAX_MANA = 12
+        private const val MANA_REGEN = 1
         private const val MAX_MESSAGES = 50
     }
 }

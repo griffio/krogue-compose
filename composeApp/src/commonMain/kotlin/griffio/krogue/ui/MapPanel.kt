@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -38,7 +39,13 @@ private val GridTextStyle = TextStyle(
  * numbers and (later) particles.
  */
 @Composable
-fun MapPanel(game: GameState, effects: EffectsState, modifier: Modifier = Modifier) {
+fun MapPanel(
+    game: GameState,
+    effects: EffectsState,
+    modifier: Modifier = Modifier,
+    targetX: Int? = null,
+    targetY: Int? = null,
+) {
     TerminalPanel(title = "DUNGEON · depth ${game.depth}", modifier = modifier) {
         val measurer = rememberTextMeasurer()
         val cell = remember(measurer) { measurer.measure("M", GridTextStyle) }
@@ -48,7 +55,7 @@ fun MapPanel(game: GameState, effects: EffectsState, modifier: Modifier = Modifi
         val originY = (game.heroY - rows / 2).coerceIn(0, max(0, game.height - rows))
 
         Box(Modifier.padding(2.dp)) {
-            MonospaceText(buildMap(game, originX, originY, cols, rows))
+            MonospaceText(buildMap(game, originX, originY, cols, rows, targetX, targetY))
             EffectsOverlay(
                 effects = effects,
                 metrics = GridMetrics(
@@ -69,6 +76,8 @@ private fun buildMap(
     originY: Int,
     cols: Int,
     rows: Int,
+    targetX: Int?,
+    targetY: Int?,
 ): AnnotatedString = buildAnnotatedString {
     for (sy in 0 until rows) {
         val y = originY + sy
@@ -79,10 +88,17 @@ private fun buildMap(
                 x == game.heroX && y == game.heroY ->
                     withStyle(SpanStyle(color = TerminalTheme.Hero)) { append('@') }
 
-                monster != null && game.isVisible(x, y) ->
-                    withStyle(SpanStyle(color = TerminalTheme.colorFor(monster.kind))) {
+                monster != null && game.isVisible(x, y) -> {
+                    val isTarget = x == targetX && y == targetY
+                    withStyle(
+                        SpanStyle(
+                            color = if (isTarget) TerminalTheme.Background else TerminalTheme.colorFor(monster.kind),
+                            background = if (isTarget) TerminalTheme.TargetMark else Color.Unspecified,
+                        ),
+                    ) {
                         append(monster.kind.glyph)
                     }
+                }
 
                 game.isVisible(x, y) -> {
                     val terrain = game.dungeon.terrainAt(x, y)

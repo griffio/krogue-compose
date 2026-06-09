@@ -135,4 +135,148 @@ class GameLogicTest {
         fx.advance(EffectsState.LIFE_NANOS + 1L) // a delta past the lifetime
         assertTrue(fx.particles.isEmpty(), "an aged-out particle should be reaped")
     }
+
+    @Test
+    fun fireBoltDamagesTheTargetSpendsManaAndFiresABoltEvent() {
+        val game = GameState(Random(21))
+        val hx = game.heroX
+        val hy = game.heroY
+        val tx = hx + 3
+        for (x in hx..tx) game.dungeon.cells[hy][x] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val foe = Monster(tx, hy, 100, MonsterKind.ORC)
+        game.monsters.add(foe)
+
+        var bolt: GameEvent.Bolt? = null
+        game.onEvent = { if (it is GameEvent.Bolt) bolt = it }
+
+        game.cast(Spell.FIRE_BOLT, foe)
+
+        assertEquals(100 - Spell.FIRE_BOLT.damage, foe.hp)
+        assertEquals(1, game.turn, "casting ends a turn")
+        // Spent the cost, then the per-turn regen tick gave 1 back.
+        assertEquals(GameState.MAX_MANA - Spell.FIRE_BOLT.cost + 1, game.mp)
+        val firedBolt = assertNotNull(bolt, "a bolt event should fire")
+        assertEquals(tx, firedBolt.toX)
+        assertEquals(hy, firedBolt.toY)
+    }
+
+    @Test
+    fun castingWithoutEnoughManaIsANoOp() {
+        val game = GameState(Random(22))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx + 1] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy][hx + 2] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val foe = Monster(hx + 2, hy, 100, MonsterKind.ORC)
+        game.monsters.add(foe)
+
+        game.cast(Spell.ENERGY_BLAST, foe) // 12 -> 6 (+1)
+        game.cast(Spell.ENERGY_BLAST, foe) // 7 -> 1 (+1) => 2
+
+        val mpBefore = game.mp
+        val turnBefore = game.turn
+        val hpBefore = foe.hp
+        game.cast(Spell.FIRE_BOLT, foe) // 2 < 3: rejected
+
+        assertEquals(mpBefore, game.mp, "no mana spent")
+        assertEquals(turnBefore, game.turn, "no turn passes")
+        assertEquals(hpBefore, foe.hp, "no damage dealt")
+    }
+
+    @Test
+    fun energyBlastDamagesEveryMonsterInRadiusAndSparesTheHero() {
+        val game = GameState(Random(23))
+        val hx = game.heroX
+        val hy = game.heroY
+        val cx = hx + 3
+        for (x in hx..(cx + 1)) game.dungeon.cells[hy][x] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy + 1][cx] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy - 1][cx] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val center = Monster(cx, hy, 50, MonsterKind.ORC)
+        val above = Monster(cx, hy - 1, 50, MonsterKind.ORC)
+        val below = Monster(cx, hy + 1, 50, MonsterKind.ORC)
+        game.monsters.addAll(listOf(center, above, below))
+
+        val heroHpBefore = game.hp
+        game.cast(Spell.ENERGY_BLAST, center)
+
+        assertTrue(center.hp < 50 && above.hp < 50 && below.hp < 50, "all three caught in the blast")
+        // The cluster is >1 cell away, so no monster reaches the hero this turn,
+        // and the blast itself never targets the hero's tile.
+        assertEquals(heroHpBefore, game.hp, "the blast does not wound the hero")
+    }
+
+    @Test
+    fun aBoltFizzlesAgainstAWall() {
+        val game = GameState(Random(24))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx + 1] = Terrain.WALL.glyph
+        game.dungeon.cells[hy][hx + 3] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val foe = Monster(hx + 3, hy, 50, MonsterKind.ORC)
+        game.monsters.add(foe)
+
+        game.cast(Spell.FIRE_BOLT, foe)
+
+        assertEquals(50, foe.hp, "the wall blocks the bolt")
+    }
+
+    @Test
+    fun manaRegeneratesOverTurnsUpToTheMax() {
+        val game = GameState(Random(25))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx - 1] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy][hx + 1] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val foe = Monster(hx + 1, hy, 100, MonsterKind.ORC)
+        game.monsters.add(foe)
+
+        game.cast(Spell.ENERGY_BLAST, foe) // spend 6
+        val afterCast = game.mp
+        game.monsters.clear() // clear the field so plain moves just pass turns
+
+        game.move(Direction.WEST)
+        game.move(Direction.EAST)
+        game.move(Direction.WEST)
+
+        assertTrue(game.mp > afterCast, "mana climbs back over turns")
+        assertTrue(game.mp <= game.maxMp, "mana never exceeds the cap")
+    }
+
+    @Test
+    fun aFinishedBoltChainsIntoABurst() {
+        val fx = EffectsState()
+        fx.emit(GameEvent.Bolt(0, 0, 3, 0, SpellKind.FIRE, impactRadius = 1))
+        assertTrue(fx.particles.single() is Bolt)
+        fx.advance(0L) // baseline
+        fx.advance(10_000_000_000L) // long past the bolt's flight
+        assertTrue(fx.particles.none { it is Bolt }, "the bolt is reaped")
+        assertTrue(fx.particles.any { it is Burst }, "and detonates into a burst")
+    }
+
+    @Test
+    fun visibleMonstersAndTargetCycling() {
+        val game = GameState(Random(26))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx + 1] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy + 1][hx] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val a = Monster(hx + 1, hy, 5, MonsterKind.RAT)
+        val b = Monster(hx, hy + 1, 5, MonsterKind.RAT)
+        game.monsters.addAll(listOf(a, b))
+
+        val vis = game.visibleMonsters
+        assertEquals(2, vis.size, "both adjacent monsters are in sight")
+
+        val t1 = assertNotNull(game.nearestVisibleMonster())
+        val t2 = assertNotNull(game.cycleTarget(t1))
+        assertTrue(t1 !== t2, "cycling moves to the other foe")
+        assertEquals(t1, game.cycleTarget(t2), "and wraps back around")
+    }
 }

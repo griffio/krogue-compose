@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -24,7 +27,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,17 +37,54 @@ import griffio.krogue.game.Direction
 import griffio.krogue.game.EffectsState
 import griffio.krogue.game.GameState
 import griffio.krogue.game.GameStatus
+import griffio.krogue.game.Monster
+import griffio.krogue.game.Spell
 
 /**
  * The full play screen: a map section on the left and a stacked column of
  * status sections on the right, framed like a tiled terminal. Keyboard input is
- * captured on a focusable root so arrow / WASD / vi (hjkl) keys all move the
- * hero, and R starts a fresh dungeon.
+ * captured on a focusable root — arrow / WASD / vi (hjkl) keys move, `F` / `B`
+ * cast spells at the locked target, `Tab` cycles targets, and `R` restarts.
  */
 @Composable
 fun GameScreen(game: GameState, effects: EffectsState, modifier: Modifier = Modifier) {
     val focusRequester = remember { FocusRequester() }
+    var target: Monster? by remember { mutableStateOf(null) }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    // The locked target, but only while it's alive and still in sight.
+    fun activeTarget(): Monster? = target?.takeIf { it in game.visibleMonsters }
+
+    fun fire(spell: Spell) {
+        val foe = activeTarget() ?: game.nearestVisibleMonster()
+        if (foe == null) {
+            game.announce("No target in sight.")
+            return
+        }
+        target = foe
+        game.cast(spell, foe)
+        // Re-acquire if the target was slain or slipped out of view.
+        if (activeTarget() == null) target = game.nearestVisibleMonster()
+    }
+
+    fun handle(event: KeyEvent): Boolean {
+        if (event.type != KeyEventType.KeyDown) return false
+        when (event.key) {
+            Key.DirectionUp, Key.W, Key.K -> game.move(Direction.NORTH)
+            Key.DirectionDown, Key.S, Key.J -> game.move(Direction.SOUTH)
+            Key.DirectionLeft, Key.A, Key.H -> game.move(Direction.WEST)
+            Key.DirectionRight, Key.D, Key.L -> game.move(Direction.EAST)
+            Key.Tab -> target = game.cycleTarget(activeTarget())
+            Key.F -> fire(Spell.FIRE_BOLT)
+            Key.B -> fire(Spell.ENERGY_BLAST)
+            Key.R -> {
+                game.startNewGame()
+                target = null
+            }
+            else -> return false
+        }
+        return true
+    }
 
     Box(
         modifier
@@ -52,13 +92,14 @@ fun GameScreen(game: GameState, effects: EffectsState, modifier: Modifier = Modi
             .background(TerminalTheme.Background)
             .focusRequester(focusRequester)
             .focusable()
-            .onKeyEvent { event -> handleKey(event, game) },
+            .onPreviewKeyEvent { handle(it) },
     ) {
         Column(Modifier.fillMaxSize().padding(10.dp)) {
             Header()
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MapPanel(game, effects, Modifier.weight(1f).fillMaxSize())
+                val aimed = activeTarget()
+                MapPanel(game, effects, Modifier.weight(1f).fillMaxSize(), aimed?.x, aimed?.y)
                 Column(
                     Modifier.width(260.dp).fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -102,8 +143,10 @@ private fun ControlsPanel(modifier: Modifier = Modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             ControlRow("move", "↑↓←→ / wasd / hjkl")
             ControlRow("attack", "move into a foe")
-            ControlRow("descend", "walk onto >")
-            ControlRow("win", "reach * relic")
+            ControlRow("target", "Tab to cycle")
+            ControlRow("fire bolt", "F")
+            ControlRow("energy blast", "B")
+            ControlRow("descend / win", "> stairs · * relic")
             ControlRow("new map", "R")
         }
     }
@@ -137,7 +180,7 @@ private fun GameOverOverlay(game: GameState) {
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "depth ${game.depth} · ${game.gold} gold · ${game.turn} turns",
+                "depth ${game.depth} · ${game.gold} gold · ${game.kills} slain · ${game.turn} turns",
                 color = TerminalTheme.Foreground,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 16.sp,
@@ -149,17 +192,5 @@ private fun GameOverOverlay(game: GameState) {
                 fontSize = 14.sp,
             )
         }
-    }
-}
-
-private fun handleKey(event: KeyEvent, game: GameState): Boolean {
-    if (event.type != KeyEventType.KeyDown) return false
-    return when (event.key) {
-        Key.DirectionUp, Key.W, Key.K -> { game.move(Direction.NORTH); true }
-        Key.DirectionDown, Key.S, Key.J -> { game.move(Direction.SOUTH); true }
-        Key.DirectionLeft, Key.A, Key.H -> { game.move(Direction.WEST); true }
-        Key.DirectionRight, Key.D, Key.L -> { game.move(Direction.EAST); true }
-        Key.R -> { game.startNewGame(); true }
-        else -> false
     }
 }

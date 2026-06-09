@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import kotlin.math.hypot
 
 /** Who was struck — picks the colour of the floating number. */
 enum class HitTarget { HERO, MONSTER }
@@ -20,32 +22,71 @@ sealed interface GameEvent {
 
     data class Hit(override val x: Int, override val y: Int, val amount: Int, val target: HitTarget) : GameEvent
     data class Gold(override val x: Int, override val y: Int, val amount: Int) : GameEvent
+
+    /** A spell projectile fired from one cell to an impact cell. */
+    data class Bolt(
+        override val x: Int,
+        override val y: Int,
+        val toX: Int,
+        val toY: Int,
+        val kind: SpellKind,
+        val impactRadius: Int,
+    ) : GameEvent
 }
 
 /**
- * One short-lived bit of floating text drawn over the map. Coordinates are in
- * *world cells* (the overlay maps them to pixels); [ageNanos] is advanced by the
- * frame loop and compared against [lifeNanos] to fade and expire it.
+ * One animated thing drawn over the map. [ageNanos] is advanced by the frame
+ * loop and compared against [lifeNanos] to fade and expire it; [fraction] is the
+ * normalised progress used to drive position, colour, and alpha. Coordinates are
+ * in *world cells* — the overlay maps them to pixels.
  */
+sealed interface Particle {
+    var ageNanos: Long
+    val lifeNanos: Long
+    val fraction: Float get() = (ageNanos.toFloat() / lifeNanos).coerceIn(0f, 1f)
+}
+
+/** A rising, fading number (combat damage, gold). */
 class FloatingText(
     val worldX: Float,
     val worldY: Float,
     val text: String,
     val color: Color,
-    var ageNanos: Long,
-    val lifeNanos: Long,
-)
+    override var ageNanos: Long,
+    override val lifeNanos: Long,
+) : Particle
+
+/** A projectile glyph travelling a straight line, leaving a fading trail. */
+class Bolt(
+    val fromX: Float,
+    val fromY: Float,
+    val toX: Float,
+    val toY: Float,
+    val kind: SpellKind,
+    val impactRadius: Int,
+    override var ageNanos: Long,
+    override val lifeNanos: Long,
+) : Particle
+
+/** An expanding ring of glyphs at an impact point. */
+class Burst(
+    val centerX: Float,
+    val centerY: Float,
+    val maxRadius: Float,
+    val kind: SpellKind,
+    override var ageNanos: Long,
+    override val lifeNanos: Long,
+) : Particle
 
 /**
  * The real-time effects channel that sits beside the turn-based [GameState].
  * [emit] is wired to `GameState.onEvent`; [advance] is driven by a
- * `withFrameNanos` loop in the UI. This is deliberately the whole particle
- * system — later milestones add new [GameEvent] kinds and new visuals here
- * without touching the game core.
+ * `withFrameNanos` loop in the UI. Adding a new effect means a new [GameEvent]
+ * and a new [Particle] — the game core stays untouched.
  */
 class EffectsState {
 
-    val particles = mutableStateListOf<FloatingText>()
+    val particles = mutableStateListOf<Particle>()
 
     /** Bumped every frame so a Canvas that reads it redraws while animating. */
     var tick: Long by mutableStateOf(0L)
@@ -57,38 +98,79 @@ class EffectsState {
         when (event) {
             is GameEvent.Hit -> {
                 val color = if (event.target == HitTarget.HERO) HeroDamage else MonsterDamage
-                add(event.x, event.y, "-${event.amount}", color)
+                addText(event.x, event.y, "-${event.amount}", color)
             }
-            is GameEvent.Gold -> add(event.x, event.y, "+${event.amount}", GoldGain)
+            is GameEvent.Gold -> addText(event.x, event.y, "+${event.amount}", GoldGain)
+            is GameEvent.Bolt -> {
+                val dist = hypot((event.toX - event.x).toFloat(), (event.toY - event.y).toFloat())
+                val life = (dist * BOLT_NANOS_PER_CELL).toLong().coerceAtLeast(MIN_BOLT_NANOS)
+                particles.add(
+                    Bolt(
+                        fromX = event.x + 0.5f,
+                        fromY = event.y.toFloat(),
+                        toX = event.toX + 0.5f,
+                        toY = event.toY.toFloat(),
+                        kind = event.kind,
+                        impactRadius = event.impactRadius,
+                        ageNanos = 0L,
+                        lifeNanos = life,
+                    ),
+                )
+            }
         }
     }
 
-    /** Advance the simulation to the given frame timestamp and reap dead particles. */
+    /** Advance the simulation to the given frame timestamp; reap and chain. */
     fun advance(frameTimeNanos: Long) {
         val prev = prevNanos
         prevNanos = frameTimeNanos
         if (prev != -1L) {
             val delta = frameTimeNanos - prev
             for (p in particles) p.ageNanos += delta
-            particles.removeAll { it.ageNanos >= it.lifeNanos }
+            val finished = particles.filter { it.ageNanos >= it.lifeNanos }
+            if (finished.isNotEmpty()) {
+                particles.removeAll(finished)
+                // A bolt that lands detonates into a burst at its impact.
+                for (p in finished) if (p is Bolt) {
+                    val radius = if (p.impactRadius <= 0) 1f else p.impactRadius.toFloat()
+                    particles.add(Burst(p.toX, p.toY, radius, p.kind, 0L, BURST_NANOS))
+                }
+            }
         }
         tick = frameTimeNanos
         // Idle: let the loop stop and re-baseline cleanly on the next burst.
         if (particles.isEmpty()) prevNanos = -1L
     }
 
-    private fun add(x: Int, y: Int, text: String, color: Color) {
-        // Centre horizontally on the cell; start ageNanos relative so a particle
-        // emitted between frames isn't aged by an absolute baseline.
+    private fun addText(x: Int, y: Int, text: String, color: Color) {
         particles.add(FloatingText(x + 0.5f, y.toFloat(), text, color, ageNanos = 0L, lifeNanos = LIFE_NANOS))
     }
 
     companion object {
         const val LIFE_NANOS = 900_000_000L
         const val RISE_CELLS = 1.4f
+        const val BURST_NANOS = 300_000_000L
+        private const val BOLT_NANOS_PER_CELL = 26_000_000L
+        private const val MIN_BOLT_NANOS = 90_000_000L
 
         private val HeroDamage = Color(0xFFE0604F)
         private val MonsterDamage = Color(0xFFFFF44F)
         private val GoldGain = Color(0xFFE0B24F)
+
+        // Age-keyed colour ramps: t=0 is youngest (hottest), t=1 is spent.
+        private val FireStops = listOf(
+            Color(0xFFFFF6D0), Color(0xFFFFD23F), Color(0xFFFF8C1A), Color(0xFFE0341B), Color(0xFF5A4A45),
+        )
+        private val EnergyStops = listOf(
+            Color(0xFFEAF6FF), Color(0xFF6FE0FF), Color(0xFF3A7BFF), Color(0xFF8A5CFF), Color(0xFF2A2A55),
+        )
+
+        /** Colour for a spell particle of [kind] at normalised age [t] (0..1). */
+        fun spellColor(kind: SpellKind, t: Float): Color {
+            val stops = if (kind == SpellKind.FIRE) FireStops else EnergyStops
+            val scaled = t.coerceIn(0f, 1f) * (stops.size - 1)
+            val i = scaled.toInt().coerceAtMost(stops.size - 2)
+            return lerp(stops[i], stops[i + 1], scaled - i)
+        }
     }
 }

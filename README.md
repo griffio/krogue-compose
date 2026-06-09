@@ -6,7 +6,24 @@ out several text "panels" side-by-side and stacked, while keeping the classic
 ASCII look. The field-of-view and dungeon-generation algorithms are ported from
 [`krogue-kotter`](https://github.com/griffio/krogue-kotter).
 
-![combat on the first floor — a rat closing in, damage floating up](docs/combat.png)
+![a fire bolt streaks toward a foe](docs/spell.png)
+
+## Milestone 3 — ranged spells & ASCII particle effects
+
+- **Two spells, keyboard-cast** — `F` throws a single-target **fire bolt**; `B`
+  looses an **energy blast** that detonates for area damage. Both auto-target the
+  nearest visible monster; `Tab` cycles targets (the locked foe is highlighted).
+- **Mana** — an `MP` pool gates casting and regenerates one per turn, so spells
+  and melee trade off.
+- **Instant sim, animated playback** — a cast resolves immediately (line of fire
+  traced to the first wall or monster, damage applied, mana spent); the projectile
+  and explosion are pure eye-candy played over the already-settled state, so the
+  turn-based core never depends on the animation.
+- **ASCII particles** — the effects layer grew from floating numbers into a small
+  particle taxonomy: a **bolt** glyph travelling its line with a fading trail, and
+  an expanding **burst** ring at impact, both coloured by an age-keyed ramp
+  (white-hot → orange → red → smoke for fire; an icy ramp for energy). In the
+  spirit of the [Grid Sage Games particle write-up](https://www.gridsagegames.com/blog/2014/03/particle-effects/).
 
 ## Milestone 2 — monsters, combat, a winnable loop, and an effects layer
 
@@ -60,14 +77,15 @@ composeApp/
       DungeonGenerator.kt  # room-growing map generation
       ShadowCast.kt        # recursive-shadowcasting FOV
       Monster.kt           # monster kinds, spawning, stats
-      Effects.kt           # game events + the floating-text/particle model
-      GameState.kt         # observable model: hero, monsters, combat, movement
+      Spell.kt             # spells, costs, and Bresenham line-of-fire
+      Effects.kt           # game events + particle model (text/bolt/burst) + colour ramps
+      GameState.kt         # observable model: hero, monsters, combat, spells, movement
     ui/            # Compose terminal renderer
       TerminalTheme.kt     # palette (terrain + monster colours)
-      MapPanel.kt          # camera viewport, per-row AnnotatedString grid
-      EffectsOverlay.kt    # Canvas + withFrameNanos loop for floating numbers
+      MapPanel.kt          # camera viewport, per-row AnnotatedString grid, target marker
+      EffectsOverlay.kt    # Canvas + withFrameNanos loop drawing the particles
       Panels.kt            # HERO / LEGEND / LOG / CONTROLS sections
-      GameScreen.kt        # layout + keyboard input
+      GameScreen.kt        # layout + keyboard input (move / cast / target)
     App.kt         # shared composable entry point
   src/jvmMain/     # desktop window entry point + headless screenshot tool
   src/wasmJsMain/  # browser entry point + index.html
@@ -111,6 +129,9 @@ visual checks). Optional second arg scripts N random-walk steps first:
 |---|---|
 | Move | `↑ ↓ ← →` · `w a s d` · `h j k l` |
 | Attack | move into a monster |
+| Fire bolt | `F` |
+| Energy blast | `B` |
+| Cycle target | `Tab` |
 | Descend | walk onto `>` |
 | Win | reach the relic `*` on depth 5 |
 | New map | `R` |

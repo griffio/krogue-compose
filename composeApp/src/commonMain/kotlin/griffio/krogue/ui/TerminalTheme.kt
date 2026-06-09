@@ -20,6 +20,11 @@ object TerminalTheme {
 
     val Hero = Color(0xFFFFF44F)
 
+    // Background highlight on the currently-targeted monster.
+    val TargetMark = Color(0xFFE0604F)
+
+    val Mana = Color(0xFF6FE0FF)
+
     // Glyph colour for a tile in full view.
     fun colorFor(terrain: Terrain): Color = when (terrain) {
         Terrain.WALL -> Color(0xFF8C9B7A)
