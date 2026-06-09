@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import griffio.krogue.game.Direction
+import griffio.krogue.game.EffectsState
 import griffio.krogue.game.GameState
 import griffio.krogue.game.GameStatus
 
@@ -41,7 +42,7 @@ import griffio.krogue.game.GameStatus
  * hero, and R starts a fresh dungeon.
  */
 @Composable
-fun GameScreen(game: GameState, modifier: Modifier = Modifier) {
+fun GameScreen(game: GameState, effects: EffectsState, modifier: Modifier = Modifier) {
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
@@ -57,7 +58,7 @@ fun GameScreen(game: GameState, modifier: Modifier = Modifier) {
             Header()
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MapPanel(game, Modifier.weight(1f).fillMaxSize())
+                MapPanel(game, effects, Modifier.weight(1f).fillMaxSize())
                 Column(
                     Modifier.width(260.dp).fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -100,7 +101,9 @@ private fun ControlsPanel(modifier: Modifier = Modifier) {
     TerminalPanel(title = "CONTROLS", modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             ControlRow("move", "↑↓←→ / wasd / hjkl")
+            ControlRow("attack", "move into a foe")
             ControlRow("descend", "walk onto >")
+            ControlRow("win", "reach * relic")
             ControlRow("new map", "R")
         }
     }

@@ -5,7 +5,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import griffio.krogue.game.Direction
+import griffio.krogue.game.EffectsState
+import griffio.krogue.game.GameEvent
 import griffio.krogue.game.GameState
+import griffio.krogue.game.HitTarget
 import griffio.krogue.ui.GameScreen
 import griffio.krogue.ui.TerminalTheme
 import java.io.File
@@ -30,9 +33,13 @@ fun main(args: Array<String>) {
         density = Density(1f),
     ) {
         if (steps > 0) {
-            val game = GameState(Random(123))
+            val effects = EffectsState()
+            val game = GameState(Random(123)).apply { onEvent = effects::emit }
             val rng = Random(7)
             repeat(steps) { game.move(Direction.entries[rng.nextInt(4)]) }
+            // Particles are transient and won't survive a random walk, so emit a
+            // demo hit at the hero just before rendering to capture the overlay.
+            effects.emit(GameEvent.Hit(game.heroX, game.heroY, 3, HitTarget.HERO))
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     background = TerminalTheme.Background,
@@ -42,7 +49,7 @@ fun main(args: Array<String>) {
                     onSurface = TerminalTheme.Foreground,
                 ),
             ) {
-                GameScreen(game)
+                GameScreen(game, effects)
             }
         } else {
             App()

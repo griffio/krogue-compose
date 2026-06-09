@@ -1,6 +1,7 @@
 package griffio.krogue.ui
 
 import androidx.compose.ui.graphics.Color
+import griffio.krogue.game.MonsterKind
 import griffio.krogue.game.Terrain
 
 /**
@@ -28,7 +29,16 @@ object TerminalTheme {
         Terrain.TRAP -> Danger
         Terrain.TREASURE -> Warn
         Terrain.STAIRS -> Color(0xFFEAF2EC)
+        Terrain.AMULET -> Color(0xFFD66BE0)
         Terrain.EMPTY -> Background
+    }
+
+    // Glyph colour for a monster of the given kind.
+    fun colorFor(kind: MonsterKind): Color = when (kind) {
+        MonsterKind.RAT -> Color(0xFF9C8B7A)
+        MonsterKind.KOBOLD -> Color(0xFFCB6A3E)
+        MonsterKind.SNAKE -> Color(0xFF6FCB5A)
+        MonsterKind.ORC -> Color(0xFFC04F8C)
     }
 
     // The same tile remembered through fog of war: drawn, but dimmed.

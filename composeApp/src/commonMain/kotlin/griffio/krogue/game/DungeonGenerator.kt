@@ -16,6 +16,8 @@ data class Dungeon(
     val height: Int,
     val cells: Array<CharArray>,
     val rooms: List<Room>,
+    val stairsX: Int = -1,
+    val stairsY: Int = -1,
 ) {
     operator fun get(x: Int, y: Int): Char = cells[y][x]
 
@@ -82,8 +84,8 @@ class DungeonGenerator(private val random: Random = Random.Default) {
         }
 
         scatterTreasure(cells, rooms)
-        placeStairs(cells, rooms)
-        return Dungeon(width, height, cells, rooms)
+        val stairs = placeStairs(cells, rooms)
+        return Dungeon(width, height, cells, rooms, stairs?.first ?: -1, stairs?.second ?: -1)
     }
 
     private fun growNorth(
@@ -167,8 +169,8 @@ class DungeonGenerator(private val random: Random = Random.Default) {
         }
     }
 
-    private fun placeStairs(cells: Array<CharArray>, rooms: List<Room>) {
-        if (rooms.size < 2) return
+    private fun placeStairs(cells: Array<CharArray>, rooms: List<Room>): Pair<Int, Int>? {
+        if (rooms.size < 2) return null
         // Put the descent in the room farthest (by center) from the first room.
         val start = rooms.first()
         val farthest = rooms.maxBy {
@@ -177,6 +179,7 @@ class DungeonGenerator(private val random: Random = Random.Default) {
             dx * dx + dy * dy
         }
         cells[farthest.centerY][farthest.centerX] = STAIRS
+        return farthest.centerX to farthest.centerY
     }
 
     companion object {

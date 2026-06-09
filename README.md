@@ -6,7 +6,24 @@ out several text "panels" side-by-side and stacked, while keeping the classic
 ASCII look. The field-of-view and dungeon-generation algorithms are ported from
 [`krogue-kotter`](https://github.com/griffio/krogue-kotter).
 
-![the dungeon, partly explored](docs/explore.png)
+![combat on the first floor — a rat closing in, damage floating up](docs/combat.png)
+
+## Milestone 2 — monsters, combat, a winnable loop, and an effects layer
+
+- **Monsters** — rats `r`, kobolds `k`, snakes `s`, and orcs `o` spawn per level,
+  scaling in count and roster with depth. A monster that can see the hero (its
+  tile is lit by the shared FOV) chases along the dominant axis; otherwise it
+  wanders. They're rendered only where you can currently see them.
+- **Melee combat** — move into a foe to attack (bump-to-attack); adjacent
+  monsters strike back on their turn. The hero's damage grows slightly with
+  depth. Hit numbers float up over the grid: red for damage taken, yellow for
+  damage dealt.
+- **A winnable loop** — descend to depth `5`, where the down-stairs are replaced
+  by the relic `*`. Reach it to win; die, and it's `R` to start over.
+- **Real-time effects layer** — a frame-driven (`withFrameNanos`) Canvas overlaid
+  on the text grid, fed by semantic game events. The floating combat numbers are
+  the first effect; the layer is the seam future particle effects plug into,
+  with the turn-based core left untouched.
 
 ## Milestone 1 — movement, generated map, field of vision
 
@@ -42,10 +59,13 @@ composeApp/
       Terrain.kt           # tile kinds + glyphs
       DungeonGenerator.kt  # room-growing map generation
       ShadowCast.kt        # recursive-shadowcasting FOV
-      GameState.kt         # observable model: hero, hp, fog grids, movement
+      Monster.kt           # monster kinds, spawning, stats
+      Effects.kt           # game events + the floating-text/particle model
+      GameState.kt         # observable model: hero, monsters, combat, movement
     ui/            # Compose terminal renderer
-      TerminalTheme.kt     # palette
+      TerminalTheme.kt     # palette (terrain + monster colours)
       MapPanel.kt          # camera viewport, per-row AnnotatedString grid
+      EffectsOverlay.kt    # Canvas + withFrameNanos loop for floating numbers
       Panels.kt            # HERO / LEGEND / LOG / CONTROLS sections
       GameScreen.kt        # layout + keyboard input
     App.kt         # shared composable entry point
@@ -90,5 +110,7 @@ visual checks). Optional second arg scripts N random-walk steps first:
 | Action | Keys |
 |---|---|
 | Move | `↑ ↓ ← →` · `w a s d` · `h j k l` |
+| Attack | move into a monster |
 | Descend | walk onto `>` |
+| Win | reach the relic `*` on depth 5 |
 | New map | `R` |

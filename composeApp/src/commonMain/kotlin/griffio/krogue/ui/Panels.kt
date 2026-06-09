@@ -72,7 +72,9 @@ fun StatsPanel(game: GameState, modifier: Modifier = Modifier) {
             MonoLabel(healthBar(game.hp, game.maxHp), hpColor)
             Spacer(Modifier.height(2.dp))
             StatLine("Gold", "${game.gold}", TerminalTheme.Warn)
-            StatLine("Depth", "${game.depth}", TerminalTheme.Foreground)
+            StatLine("Slain", "${game.kills}", TerminalTheme.Foreground)
+            StatLine("Foes", "${game.monsters.size}", TerminalTheme.Danger)
+            StatLine("Depth", "${game.depth}/${griffio.krogue.game.GameState.MAX_DEPTH}", TerminalTheme.Foreground)
             StatLine("Turn", "${game.turn}", TerminalTheme.Dim)
             StatLine("Pos", "${game.heroX},${game.heroY}", TerminalTheme.Dim)
             Spacer(Modifier.height(4.dp))
@@ -120,6 +122,8 @@ fun LegendPanel(modifier: Modifier = Modifier) {
             LegendRow("^", "trap", TerminalTheme.colorFor(griffio.krogue.game.Terrain.TRAP))
             LegendRow("$", "gold", TerminalTheme.colorFor(griffio.krogue.game.Terrain.TREASURE))
             LegendRow(">", "stairs", TerminalTheme.colorFor(griffio.krogue.game.Terrain.STAIRS))
+            LegendRow("*", "relic", TerminalTheme.colorFor(griffio.krogue.game.Terrain.AMULET))
+            LegendRow("rkso", "monsters", TerminalTheme.colorFor(griffio.krogue.game.MonsterKind.KOBOLD))
         }
     }
 }

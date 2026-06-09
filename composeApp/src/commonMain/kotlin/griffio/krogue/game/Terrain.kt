@@ -15,6 +15,7 @@ enum class Terrain(val glyph: Char, val opaque: Boolean, val walkable: Boolean) 
     TRAP('^', opaque = false, walkable = true),
     TREASURE('$', opaque = false, walkable = true),
     STAIRS('>', opaque = false, walkable = true),
+    AMULET('*', opaque = false, walkable = true),
     EMPTY(' ', opaque = true, walkable = false);
 
     companion object {
@@ -26,6 +27,7 @@ enum class Terrain(val glyph: Char, val opaque: Boolean, val walkable: Boolean) 
             '^' -> TRAP
             '$', '£' -> TREASURE
             '>' -> STAIRS
+            '*' -> AMULET
             else -> EMPTY
         }
     }

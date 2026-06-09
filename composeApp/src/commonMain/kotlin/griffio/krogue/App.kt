@@ -4,13 +4,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import griffio.krogue.game.EffectsState
 import griffio.krogue.game.GameState
 import griffio.krogue.ui.GameScreen
 import griffio.krogue.ui.TerminalTheme
 
 @Composable
 fun App() {
-    val game = remember { GameState() }
+    val effects = remember { EffectsState() }
+    val game = remember { GameState().apply { onEvent = effects::emit } }
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = TerminalTheme.Background,
@@ -20,6 +22,6 @@ fun App() {
             onSurface = TerminalTheme.Foreground,
         ),
     ) {
-        GameScreen(game)
+        GameScreen(game, effects)
     }
 }
