@@ -6,15 +6,29 @@ out several text "panels" side-by-side and stacked, while keeping the classic
 ASCII look. The field-of-view and dungeon-generation algorithms are ported from
 [`krogue-kotter`](https://github.com/griffio/krogue-kotter).
 
-![a fire bolt streaks toward a foe](docs/spell.png)
+![a wisp spits venom at the hero](docs/threats.png)
+
+## Milestone 4 — greater threats: ranged casters, door traps, ambushes
+
+- **Ranged casters** — the `w` wisp doesn't close in: with line of sight and in
+  range it *winds up* (a charge pulse + a log warning) and looses a venom bolt the
+  next turn. Counterplay: break line of sight to make it whiff, or close to melee
+  to disrupt the shot. This punishes standing back and plinking with spells.
+- **Hidden door traps** — the `~` water and `^` trap terrains were wired all along
+  but never placed; M4 scatters them onto the floor around `+` doorways (and a few
+  in rooms). Traps are **hidden** — drawn as plain floor — until you step adjacent,
+  then shown as `^` so you can route around them, or risk a 1-wide corridor.
+- **Sleeping monsters & ambush** — monsters start dormant and only wake when they
+  see you within range (or take a hit), so a room can erupt at once instead of
+  trickling out. Getting greedy near a packed room is now dangerous.
 
 ## Milestone 3 — ranged spells & ASCII particle effects
 
 - **Two spells, keyboard-cast** — `F` throws a single-target **fire bolt**; `B`
   looses an **energy blast** that detonates for area damage. Both auto-target the
   nearest visible monster; `Tab` cycles targets (the locked foe is highlighted).
-- **Mana** — an `MP` pool gates casting and regenerates one per turn, so spells
-  and melee trade off.
+- **Mana** — an `MP` pool gates casting and regenerates slowly (one point every
+  few turns), so spells are a resource to ration rather than spam.
 - **Instant sim, animated playback** — a cast resolves immediately (line of fire
   traced to the first wall or monster, damage applied, mana spent); the projectile
   and explosion are pure eye-candy played over the already-settled state, so the
@@ -76,10 +90,10 @@ composeApp/
       Terrain.kt           # tile kinds + glyphs
       DungeonGenerator.kt  # room-growing map generation
       ShadowCast.kt        # recursive-shadowcasting FOV
-      Monster.kt           # monster kinds, spawning, stats
-      Spell.kt             # spells, costs, and Bresenham line-of-fire
+      Monster.kt           # monster kinds (incl. ranged wisp), spawning, AI state
+      Spell.kt             # spells, costs, and Bresenham line-of-fire / line-of-sight
       Effects.kt           # game events + particle model (text/bolt/burst) + colour ramps
-      GameState.kt         # observable model: hero, monsters, combat, spells, movement
+      GameState.kt         # observable model: hero, monsters, combat, spells, traps, AI
     ui/            # Compose terminal renderer
       TerminalTheme.kt     # palette (terrain + monster colours)
       MapPanel.kt          # camera viewport, per-row AnnotatedString grid, target marker

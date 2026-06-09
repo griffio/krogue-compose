@@ -8,6 +8,8 @@ import griffio.krogue.game.Direction
 import griffio.krogue.game.EffectsState
 import griffio.krogue.game.GameEvent
 import griffio.krogue.game.GameState
+import griffio.krogue.game.Monster
+import griffio.krogue.game.MonsterKind
 import griffio.krogue.game.SpellKind
 import griffio.krogue.ui.GameScreen
 import griffio.krogue.ui.TerminalTheme
@@ -39,12 +41,20 @@ fun main(args: Array<String>) {
     val rng = Random(7)
     repeat(steps) { game.move(Direction.entries[rng.nextInt(4)]) }
 
-    // Aim a fire bolt at the nearest visible foe (or straight ahead if none) so
-    // the staged frame shows a travelling projectile with its trail.
-    val foe = game.nearestVisibleMonster()
-    val targetX = foe?.x ?: (game.heroX + 5)
-    val targetY = foe?.y ?: game.heroY
-    effects.emit(GameEvent.Bolt(game.heroX, game.heroY, targetX, targetY, SpellKind.FIRE, impactRadius = 1))
+    // Stage the headline M4 threat: drop a wisp into view a few tiles from the
+    // hero and have it spit venom, so the frame shows the ranged caster mid-shot.
+    val spot = listOf(4, 3, 2, -2, -3, -4)
+        .map { game.heroX + it to game.heroY }
+        .firstOrNull { (x, y) ->
+            game.isVisible(x, y) && game.dungeon.terrainAt(x, y).walkable && game.monsterAt(x, y) == null
+        }
+    if (spot != null) {
+        val (wx, wy) = spot
+        game.monsters.add(Monster(wx, wy, 5, MonsterKind.WISP, awake = true))
+        effects.emit(GameEvent.Bolt(wx, wy, game.heroX, game.heroY, SpellKind.VENOM, impactRadius = 0))
+    } else {
+        effects.emit(GameEvent.Bolt(game.heroX, game.heroY, game.heroX + 5, game.heroY, SpellKind.FIRE, impactRadius = 1))
+    }
 
     val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
         MaterialTheme(

@@ -85,6 +85,7 @@ class DungeonGenerator(private val random: Random = Random.Default) {
 
         scatterTreasure(cells, rooms)
         val stairs = placeStairs(cells, rooms)
+        scatterHazards(cells, rooms)
         return Dungeon(width, height, cells, rooms, stairs?.first ?: -1, stairs?.second ?: -1)
     }
 
@@ -169,6 +170,41 @@ class DungeonGenerator(private val random: Random = Random.Default) {
         }
     }
 
+    /**
+     * Activate the dormant hazard terrain: traps (and the odd pool of water) on
+     * the floor tiles flanking [DOOR] thresholds, where the hero is funnelled,
+     * plus a small base scatter so even a door-less map bites. Never overwrites
+     * the spawn (first room's centre), stairs, or treasure — only plain floor.
+     */
+    private fun scatterHazards(cells: Array<CharArray>, rooms: List<Room>) {
+        if (rooms.isEmpty()) return
+        val height = cells.size
+        val width = cells[0].size
+        val spawn = rooms.first()
+
+        fun placeable(x: Int, y: Int): Boolean =
+            y in 0 until height && x in 0 until width && cells[y][x] == FLOOR &&
+                !(x == spawn.centerX && y == spawn.centerY)
+
+        for (y in 0 until height) for (x in 0 until width) {
+            if (cells[y][x] != DOOR) continue
+            for ((dx, dy) in DOOR_NEIGHBOURS) {
+                val nx = x + dx
+                val ny = y + dy
+                if (placeable(nx, ny) && random.nextInt(100) < DOOR_TRAP_PERCENT) {
+                    cells[ny][nx] = if (random.nextInt(4) == 0) WATER else TRAP
+                }
+            }
+        }
+
+        repeat(BASE_TRAP_COUNT) {
+            val room = rooms.random(random)
+            val x = (room.left..room.right).random(random)
+            val y = (room.top..room.bottom).random(random)
+            if (placeable(x, y)) cells[y][x] = TRAP
+        }
+    }
+
     private fun placeStairs(cells: Array<CharArray>, rooms: List<Room>): Pair<Int, Int>? {
         if (rooms.size < 2) return null
         // Put the descent in the room farthest (by center) from the first room.
@@ -188,9 +224,14 @@ class DungeonGenerator(private val random: Random = Random.Default) {
         private const val DOOR = '+'
         private const val TREASURE = '$'
         private const val STAIRS = '>'
+        private const val TRAP = '^'
+        private const val WATER = '~'
         private const val MIN_DIM = 2
         private const val MAX_DIM = 9
         private const val TREASURE_COUNT = 10
+        private const val DOOR_TRAP_PERCENT = 55
+        private const val BASE_TRAP_COUNT = 4
+        private val DOOR_NEIGHBOURS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
         private val SIZE_RANGE = 48..72
         private val ROOM_DISTANCES = intArrayOf(1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5)
     }

@@ -14,19 +14,28 @@ enum class MonsterKind(
     val attack: Int,
     val displayName: String,
     val minDepth: Int,
+    /** Attack range in cells; 0 means melee only. */
+    val range: Int = 0,
 ) {
     RAT('r', hp = 3, attack = 1, displayName = "rat", minDepth = 1),
     KOBOLD('k', hp = 5, attack = 2, displayName = "kobold", minDepth = 1),
     SNAKE('s', hp = 4, attack = 2, displayName = "snake", minDepth = 2),
     ORC('o', hp = 9, attack = 3, displayName = "orc", minDepth = 3),
+    WISP('w', hp = 5, attack = 4, displayName = "wisp", minDepth = 2, range = 6),
 }
 
-/** One live monster on the current level. Position and hp are mutable. */
+/**
+ * One live monster on the current level. Position and hp are mutable, as is the
+ * AI state: [awake] monsters chase/shoot, sleepers do nothing until they notice
+ * the hero; [aiming] marks a ranged monster mid-windup (it fires next turn).
+ */
 class Monster(
     var x: Int,
     var y: Int,
     var hp: Int,
     val kind: MonsterKind,
+    var awake: Boolean = false,
+    var aiming: Boolean = false,
 )
 
 /**

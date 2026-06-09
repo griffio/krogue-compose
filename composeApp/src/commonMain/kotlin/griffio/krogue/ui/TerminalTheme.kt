@@ -44,6 +44,7 @@ object TerminalTheme {
         MonsterKind.KOBOLD -> Color(0xFFCB6A3E)
         MonsterKind.SNAKE -> Color(0xFF6FCB5A)
         MonsterKind.ORC -> Color(0xFFC04F8C)
+        MonsterKind.WISP -> Color(0xFFA6F23F)
     }
 
     // The same tile remembered through fog of war: drawn, but dimmed.

@@ -2,8 +2,8 @@ package griffio.krogue.game
 
 import kotlin.math.abs
 
-/** Visual/elemental flavour of a spell, picked up by the particle ramps. */
-enum class SpellKind { FIRE, ENERGY }
+/** Visual/elemental flavour of a spell or attack, picked up by the particle ramps. */
+enum class SpellKind { FIRE, ENERGY, VENOM }
 
 /**
  * A castable spell. [cost] is mana spent; [damage] is applied to what the bolt

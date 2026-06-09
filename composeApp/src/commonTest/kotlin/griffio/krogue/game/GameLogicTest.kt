@@ -3,6 +3,7 @@ package griffio.krogue.game
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -154,8 +155,8 @@ class GameLogicTest {
 
         assertEquals(100 - Spell.FIRE_BOLT.damage, foe.hp)
         assertEquals(1, game.turn, "casting ends a turn")
-        // Spent the cost, then the per-turn regen tick gave 1 back.
-        assertEquals(GameState.MAX_MANA - Spell.FIRE_BOLT.cost + 1, game.mp)
+        // Spent the cost; regen is slow (every few turns) so nothing returns yet.
+        assertEquals(GameState.MAX_MANA - Spell.FIRE_BOLT.cost, game.mp)
         val firedBolt = assertNotNull(bolt, "a bolt event should fire")
         assertEquals(tx, firedBolt.toX)
         assertEquals(hy, firedBolt.toY)
@@ -172,13 +173,13 @@ class GameLogicTest {
         val foe = Monster(hx + 2, hy, 100, MonsterKind.ORC)
         game.monsters.add(foe)
 
-        game.cast(Spell.ENERGY_BLAST, foe) // 12 -> 6 (+1)
-        game.cast(Spell.ENERGY_BLAST, foe) // 7 -> 1 (+1) => 2
+        game.cast(Spell.ENERGY_BLAST, foe) // 12 -> 6
+        game.cast(Spell.ENERGY_BLAST, foe) // 6 -> 0
 
         val mpBefore = game.mp
         val turnBefore = game.turn
         val hpBefore = foe.hp
-        game.cast(Spell.FIRE_BOLT, foe) // 2 < 3: rejected
+        game.cast(Spell.FIRE_BOLT, foe) // 0 < 3: rejected
 
         assertEquals(mpBefore, game.mp, "no mana spent")
         assertEquals(turnBefore, game.turn, "no turn passes")
@@ -278,5 +279,78 @@ class GameLogicTest {
         val t2 = assertNotNull(game.cycleTarget(t1))
         assertTrue(t1 !== t2, "cycling moves to the other foe")
         assertEquals(t1, game.cycleTarget(t2), "and wraps back around")
+    }
+
+    @Test
+    fun aRangedMonsterTelegraphsThenFires() {
+        val game = GameState(Random(31))
+        val hx = game.heroX
+        val hy = game.heroY
+        for (x in (hx - 2)..(hx + 5)) game.dungeon.cells[hy][x] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val wisp = Monster(hx + 4, hy, 100, MonsterKind.WISP, awake = true)
+        game.monsters.add(wisp)
+
+        val events = mutableListOf<GameEvent>()
+        game.onEvent = { events.add(it) }
+        val hp0 = game.hp
+
+        game.move(Direction.WEST) // hero -> hx-1; the wisp winds up
+        assertTrue(wisp.aiming, "the wisp should be charging")
+        assertEquals(hp0, game.hp, "no damage during the windup")
+        assertTrue(events.any { it is GameEvent.Charge }, "the charge is telegraphed")
+
+        game.move(Direction.WEST) // hero -> hx-2; the wisp fires
+        assertTrue(game.hp < hp0, "the bolt connects")
+        assertFalse(wisp.aiming, "the windup is spent")
+        assertTrue(events.any { it is GameEvent.Bolt }, "a bolt is loosed")
+    }
+
+    @Test
+    fun aSleepingMonsterWaitsUntilItSeesTheHero() {
+        val game = GameState(Random(32))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx - 1] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy][hx + 1] = Terrain.WALL.glyph // blocks the sight line east
+        game.dungeon.cells[hy][hx + 2] = Terrain.FLOOR.glyph
+        game.monsters.clear()
+        val orc = Monster(hx + 2, hy, 100, MonsterKind.ORC)
+        game.monsters.add(orc)
+        val startX = orc.x
+
+        game.move(Direction.WEST) // the wall hides the orc
+        assertFalse(orc.awake, "an unseen monster stays asleep")
+        assertEquals(startX, orc.x, "and does not move")
+
+        game.dungeon.cells[hy][hx + 1] = Terrain.FLOOR.glyph // clear the sight line
+        game.move(Direction.EAST) // hero returns; the orc is now in view
+        assertTrue(orc.awake, "it wakes once it sees the hero")
+    }
+
+    @Test
+    fun aHiddenTrapIsRevealedWhenAdjacentThenSprings() {
+        val game = GameState(Random(33))
+        val hx = game.heroX
+        val hy = game.heroY
+        game.dungeon.cells[hy][hx + 1] = Terrain.FLOOR.glyph
+        game.dungeon.cells[hy][hx + 2] = Terrain.TRAP.glyph
+        game.monsters.clear()
+
+        assertTrue(game.isHiddenTrap(hx + 2, hy), "the trap starts hidden")
+
+        game.move(Direction.EAST) // step adjacent to the trap
+        assertFalse(game.isHiddenTrap(hx + 2, hy), "spotted once adjacent")
+
+        val hp0 = game.hp
+        game.move(Direction.EAST) // step onto it
+        assertTrue(game.hp < hp0, "the trap springs")
+    }
+
+    @Test
+    fun theGeneratorPlacesHazards() {
+        val dungeon = DungeonGenerator(Random(7)).generate()
+        val trapCount = dungeon.cells.sumOf { row -> row.count { it == '^' } }
+        assertTrue(trapCount > 0, "hazards are scattered into the dungeon")
     }
 }

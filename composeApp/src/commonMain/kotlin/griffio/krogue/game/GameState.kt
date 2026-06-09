@@ -57,6 +57,9 @@ class GameState(private val random: Random = Random.Default) {
     /** The monsters on the current level. */
     val monsters = mutableStateListOf<Monster>()
 
+    /** Trap cells the hero has spotted (been adjacent to); the rest stay hidden. */
+    private val revealedTraps = mutableStateListOf<Pair<Int, Int>>()
+
     /**
      * Sink for in-world events (hits, pickups). The UI's effects layer wires
      * this up; the core stays unaware of how — or whether — they're animated.
@@ -65,6 +68,9 @@ class GameState(private val random: Random = Random.Default) {
 
     /** The hero's per-hit melee damage, growing slightly with depth. */
     private val heroDamage get() = 4 + depth / 2
+
+    /** Counts turns toward the next point of mana regeneration. */
+    private var manaTick = 0
 
     var visible: Array<BooleanArray> = emptyGrid()
         private set
@@ -85,6 +91,22 @@ class GameState(private val random: Random = Random.Default) {
         y in explored.indices && x in explored[y].indices && explored[y][x]
 
     fun monsterAt(x: Int, y: Int): Monster? = monsters.firstOrNull { it.x == x && it.y == y }
+
+    /** A trap tile the hero hasn't yet spotted — drawn as plain floor by the UI. */
+    fun isHiddenTrap(x: Int, y: Int): Boolean =
+        dungeon.terrainAt(x, y) == Terrain.TRAP && (x to y) !in revealedTraps
+
+    /** Reveal any trap within one cell of the hero, the first time it's seen. */
+    private fun revealNearbyTraps() {
+        for (dy in -1..1) for (dx in -1..1) {
+            val x = heroX + dx
+            val y = heroY + dy
+            if (dungeon.terrainAt(x, y) == Terrain.TRAP && (x to y) !in revealedTraps) {
+                revealedTraps.add(x to y)
+                log("You spot a trap.")
+            }
+        }
+    }
 
     /** Monsters the hero can currently see, the only valid spell targets. */
     val visibleMonsters: List<Monster> get() = monsters.filter { isVisible(it.x, it.y) }
@@ -162,6 +184,7 @@ class GameState(private val random: Random = Random.Default) {
         hp = 20
         maxMp = MAX_MANA
         mp = MAX_MANA
+        manaTick = 0
         gold = 0
         turn = 0
         kills = 0
@@ -239,6 +262,7 @@ class GameState(private val random: Random = Random.Default) {
      * Shared by melee and spells. Returns true if the monster died.
      */
     private fun damageMonster(monster: Monster, dmg: Int): Boolean {
+        monster.awake = true // a struck monster is wide awake
         monster.hp -= dmg
         onEvent?.invoke(GameEvent.Hit(monster.x, monster.y, dmg, HitTarget.MONSTER))
         if (monster.hp <= 0) {
@@ -257,48 +281,117 @@ class GameState(private val random: Random = Random.Default) {
 
     /** Monsters act, mana trickles back, then we settle death and visibility. */
     private fun endTurn() {
-        mp = (mp + MANA_REGEN).coerceAtMost(maxMp)
+        // Mana trickles back slowly — one point every few turns — so spells stay a
+        // resource to ration rather than a tap that refills between every fight.
+        if (++manaTick >= MANA_REGEN_INTERVAL) {
+            manaTick = 0
+            mp = (mp + 1).coerceAtMost(maxMp)
+        }
+        revealNearbyTraps()
+        // Refresh the hero's sight for their new position before monsters react,
+        // so a monster steps into view the same turn the hero rounds a corner.
+        // FOV depends only on hero position, so the rendered result is unchanged.
+        recomputeFov()
         if (hp <= 0) {
             die()
-            recomputeFov()
             return
         }
         monstersAct()
         if (hp <= 0) die()
-        recomputeFov()
     }
 
     /**
-     * Every monster takes one step. A monster the hero can see (its tile is lit
-     * by the shared FOV) chases along the dominant axis, falling back to the
-     * other axis if the first is blocked; an unseen monster wanders. Stepping
-     * onto the hero is a bump-attack instead of a move.
+     * Every monster takes a turn. A sleeper does nothing until it notices the
+     * hero (lit by the shared FOV and within [WAKE_RADIUS]); once awake it either
+     * chases to bump-attack, or — if ranged — telegraphs and fires.
      */
     private fun monstersAct() {
-        // Snapshot: a monster never dies during its own turn, but iterate a copy
-        // so the live list can be mutated safely if that changes later.
+        // Snapshot: iterate a copy so the live list can be mutated safely.
         for (monster in monsters.toList()) {
             if (status != GameStatus.PLAYING) break
-            val steps = if (isVisible(monster.x, monster.y)) chaseSteps(monster) else listOf(wanderStep())
-            for ((sx, sy) in steps) {
-                if (sx == 0 && sy == 0) continue
-                val nx = monster.x + sx
-                val ny = monster.y + sy
-                if (nx == heroX && ny == heroY) {
-                    val dmg = monster.kind.attack
-                    hp = (hp - dmg).coerceAtLeast(0)
-                    onEvent?.invoke(GameEvent.Hit(heroX, heroY, dmg, HitTarget.HERO))
-                    log("The ${monster.kind.displayName} hits you. (-$dmg)")
-                    break
+            if (!monster.awake) {
+                if (isVisible(monster.x, monster.y) && chebyshev(monster.x, monster.y) <= WAKE_RADIUS) {
+                    monster.awake = true
+                    log("The ${monster.kind.displayName} notices you!")
+                } else {
+                    continue
                 }
-                if (canMonsterEnter(nx, ny)) {
-                    monster.x = nx
-                    monster.y = ny
-                    break
-                }
+            }
+            if (monster.kind.range > 0) rangedTurn(monster) else meleeTurn(monster)
+        }
+    }
+
+    /**
+     * A ranged monster telegraphs before firing: one turn winding up, the next
+     * loosing a bolt. Stepping adjacent disrupts it (it melees instead); breaking
+     * line of sight cancels the shot, giving the hero a way to dodge.
+     */
+    private fun rangedTurn(monster: Monster) {
+        val cheb = chebyshev(monster.x, monster.y)
+        if (monster.aiming) {
+            monster.aiming = false
+            when {
+                cheb == 1 -> meleeAttack(monster)
+                cheb <= monster.kind.range && hasLineOfSight(monster.x, monster.y, heroX, heroY) ->
+                    fireAtHero(monster)
+                else -> meleeTurn(monster)
+            }
+            return
+        }
+        if (cheb in 2..monster.kind.range && hasLineOfSight(monster.x, monster.y, heroX, heroY)) {
+            monster.aiming = true
+            onEvent?.invoke(GameEvent.Charge(monster.x, monster.y, SpellKind.VENOM))
+            log("The ${monster.kind.displayName} gathers a sickly glow…")
+        } else {
+            meleeTurn(monster)
+        }
+    }
+
+    private fun fireAtHero(monster: Monster) {
+        val dmg = monster.kind.attack
+        hp = (hp - dmg).coerceAtLeast(0)
+        onEvent?.invoke(GameEvent.Bolt(monster.x, monster.y, heroX, heroY, SpellKind.VENOM, 0))
+        onEvent?.invoke(GameEvent.Hit(heroX, heroY, dmg, HitTarget.HERO))
+        log("The ${monster.kind.displayName} spits venom. (-$dmg)")
+    }
+
+    /** Chase the hero (or wander if unseen), bumping into the hero to attack. */
+    private fun meleeTurn(monster: Monster) {
+        val steps = if (isVisible(monster.x, monster.y)) chaseSteps(monster) else listOf(wanderStep())
+        for ((sx, sy) in steps) {
+            if (sx == 0 && sy == 0) continue
+            val nx = monster.x + sx
+            val ny = monster.y + sy
+            if (nx == heroX && ny == heroY) {
+                meleeAttack(monster)
+                return
+            }
+            if (canMonsterEnter(nx, ny)) {
+                monster.x = nx
+                monster.y = ny
+                return
             }
         }
     }
+
+    private fun meleeAttack(monster: Monster) {
+        val dmg = monster.kind.attack
+        hp = (hp - dmg).coerceAtLeast(0)
+        onEvent?.invoke(GameEvent.Hit(heroX, heroY, dmg, HitTarget.HERO))
+        log("The ${monster.kind.displayName} hits you. (-$dmg)")
+    }
+
+    /** True if no opaque tile sits strictly between the two cells. */
+    private fun hasLineOfSight(x0: Int, y0: Int, x1: Int, y1: Int): Boolean {
+        val path = lineOfFire(x0, y0, x1, y1)
+        for (i in 1 until path.size - 1) {
+            val (x, y) = path[i]
+            if (dungeon.terrainAt(x, y).opaque) return false
+        }
+        return true
+    }
+
+    private fun chebyshev(x: Int, y: Int): Int = maxOf(abs(x - heroX), abs(y - heroY))
 
     /** Candidate steps toward the hero, dominant axis first. */
     private fun chaseSteps(monster: Monster): List<Pair<Int, Int>> {
@@ -349,7 +442,9 @@ class GameState(private val random: Random = Random.Default) {
 
         monsters.clear()
         monsters.addAll(spawnMonsters(level, depth, random, heroX, heroY))
+        revealedTraps.clear()
         recomputeFov()
+        revealNearbyTraps()
     }
 
     private fun recomputeFov() {
@@ -389,7 +484,8 @@ class GameState(private val random: Random = Random.Default) {
         const val FOV_RADIUS = 8
         const val MAX_DEPTH = 5
         const val MAX_MANA = 12
-        private const val MANA_REGEN = 1
+        const val WAKE_RADIUS = 6
+        private const val MANA_REGEN_INTERVAL = 3
         private const val MAX_MESSAGES = 50
     }
 }

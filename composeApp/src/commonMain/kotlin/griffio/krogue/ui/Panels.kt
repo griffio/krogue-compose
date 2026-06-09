@@ -126,6 +126,7 @@ fun LegendPanel(modifier: Modifier = Modifier) {
             LegendRow(">", "stairs", TerminalTheme.colorFor(griffio.krogue.game.Terrain.STAIRS))
             LegendRow("*", "relic", TerminalTheme.colorFor(griffio.krogue.game.Terrain.AMULET))
             LegendRow("rkso", "monsters", TerminalTheme.colorFor(griffio.krogue.game.MonsterKind.KOBOLD))
+            LegendRow("w", "wisp (ranged)", TerminalTheme.colorFor(griffio.krogue.game.MonsterKind.WISP))
         }
     }
 }

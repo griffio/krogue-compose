@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import griffio.krogue.game.EffectsState
 import griffio.krogue.game.GameState
+import griffio.krogue.game.Terrain
 import kotlin.math.max
 import kotlin.math.min
 
@@ -101,14 +102,14 @@ private fun buildMap(
                 }
 
                 game.isVisible(x, y) -> {
-                    val terrain = game.dungeon.terrainAt(x, y)
+                    val terrain = shownTerrain(game, x, y)
                     withStyle(SpanStyle(color = TerminalTheme.colorFor(terrain))) {
                         append(terrain.glyph)
                     }
                 }
 
                 game.isExplored(x, y) -> {
-                    val terrain = game.dungeon.terrainAt(x, y)
+                    val terrain = shownTerrain(game, x, y)
                     withStyle(SpanStyle(color = TerminalTheme.FogMemory)) {
                         append(terrain.glyph)
                     }
@@ -119,6 +120,12 @@ private fun buildMap(
         }
         if (sy < rows - 1) append('\n')
     }
+}
+
+/** The terrain to draw at a cell — a not-yet-spotted trap reads as plain floor. */
+private fun shownTerrain(game: GameState, x: Int, y: Int): Terrain {
+    val raw = game.dungeon.terrainAt(x, y)
+    return if (raw == Terrain.TRAP && game.isHiddenTrap(x, y)) Terrain.FLOOR else raw
 }
 
 @Composable

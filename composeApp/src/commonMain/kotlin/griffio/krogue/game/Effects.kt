@@ -32,6 +32,9 @@ sealed interface GameEvent {
         val kind: SpellKind,
         val impactRadius: Int,
     ) : GameEvent
+
+    /** A ranged monster winding up to fire — a brief pulse at its tile. */
+    data class Charge(override val x: Int, override val y: Int, val kind: SpellKind) : GameEvent
 }
 
 /**
@@ -117,6 +120,8 @@ class EffectsState {
                     ),
                 )
             }
+            is GameEvent.Charge ->
+                particles.add(Burst(event.x + 0.5f, event.y.toFloat(), 0.8f, event.kind, 0L, CHARGE_NANOS))
         }
     }
 
@@ -150,6 +155,7 @@ class EffectsState {
         const val LIFE_NANOS = 900_000_000L
         const val RISE_CELLS = 1.4f
         const val BURST_NANOS = 300_000_000L
+        const val CHARGE_NANOS = 360_000_000L
         private const val BOLT_NANOS_PER_CELL = 26_000_000L
         private const val MIN_BOLT_NANOS = 90_000_000L
 
@@ -164,10 +170,17 @@ class EffectsState {
         private val EnergyStops = listOf(
             Color(0xFFEAF6FF), Color(0xFF6FE0FF), Color(0xFF3A7BFF), Color(0xFF8A5CFF), Color(0xFF2A2A55),
         )
+        private val VenomStops = listOf(
+            Color(0xFFE8FFD0), Color(0xFFA6F23F), Color(0xFF4FD01A), Color(0xFF2C8C1B), Color(0xFF35452A),
+        )
 
         /** Colour for a spell particle of [kind] at normalised age [t] (0..1). */
         fun spellColor(kind: SpellKind, t: Float): Color {
-            val stops = if (kind == SpellKind.FIRE) FireStops else EnergyStops
+            val stops = when (kind) {
+                SpellKind.FIRE -> FireStops
+                SpellKind.ENERGY -> EnergyStops
+                SpellKind.VENOM -> VenomStops
+            }
             val scaled = t.coerceIn(0f, 1f) * (stops.size - 1)
             val i = scaled.toInt().coerceAtMost(stops.size - 2)
             return lerp(stops[i], stops[i + 1], scaled - i)
