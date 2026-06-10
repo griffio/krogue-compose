@@ -218,6 +218,9 @@ class GameState(private val random: Random = Random.Default) {
         heroX = targetX
         heroY = targetY
         turn++
+        // A footstep event for the audio layer; the terrain decides the sound
+        // (a door is smashed through, most tiles are silent).
+        onEvent?.invoke(GameEvent.Step(targetX, targetY, terrain))
 
         when (terrain) {
             Terrain.TREASURE -> {

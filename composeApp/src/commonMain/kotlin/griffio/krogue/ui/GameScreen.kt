@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import griffio.krogue.game.Direction
 import griffio.krogue.game.EffectsState
+import griffio.krogue.game.GameAudio
 import griffio.krogue.game.GameState
 import griffio.krogue.game.GameStatus
 import griffio.krogue.game.Monster
@@ -44,10 +45,16 @@ import griffio.krogue.game.Spell
  * The full play screen: a map section on the left and a stacked column of
  * status sections on the right, framed like a tiled terminal. Keyboard input is
  * captured on a focusable root — arrow / WASD / vi (hjkl) keys move, `F` / `B`
- * cast spells at the locked target, `Tab` cycles targets, and `R` restarts.
+ * cast spells at the locked target, `Tab` cycles targets, `M` mutes, and `R`
+ * restarts. [audio] is optional so headless renders run silent.
  */
 @Composable
-fun GameScreen(game: GameState, effects: EffectsState, modifier: Modifier = Modifier) {
+fun GameScreen(
+    game: GameState,
+    effects: EffectsState,
+    modifier: Modifier = Modifier,
+    audio: GameAudio? = null,
+) {
     val focusRequester = remember { FocusRequester() }
     var target: Monster? by remember { mutableStateOf(null) }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -77,8 +84,10 @@ fun GameScreen(game: GameState, effects: EffectsState, modifier: Modifier = Modi
             Key.Tab -> target = game.cycleTarget(activeTarget())
             Key.F -> fire(Spell.FIRE_BOLT)
             Key.B -> fire(Spell.ENERGY_BLAST)
+            Key.M -> game.announce(if (audio?.toggleMute() == true) "Sound off." else "Sound on.")
             Key.R -> {
                 game.startNewGame()
+                audio?.nextTrack()
                 target = null
             }
             else -> return false
@@ -147,6 +156,7 @@ private fun ControlsPanel(modifier: Modifier = Modifier) {
             ControlRow("fire bolt", "F")
             ControlRow("energy blast", "B")
             ControlRow("descend / win", "> stairs · * relic")
+            ControlRow("mute", "M")
             ControlRow("new map", "R")
         }
     }

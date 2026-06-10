@@ -8,6 +8,30 @@ ASCII look. The field-of-view and dungeon-generation algorithms are ported from
 
 ![a wisp spits venom at the hero](docs/threats.png)
 
+## Milestone 5 — sound: epic themes & spell SFX
+
+- **Looping music** — an epic theme plays on a loop, swapping between two tracks
+  each new game (`R`) so a restart sounds fresh.
+- **Spell sound effects** — the same semantic `GameEvent.Bolt` that spawns a
+  particle now also fires a clip: a strike for the **fire bolt** (`F`), a crackle
+  for the **energy blast** (`B`), and a dark hiss for the wisp's **venom bolt** —
+  monster shots get audio for free, since they emit the same event.
+- **World SFX** — the same event stream drives a set of short effects: a coin
+  chime on gold, a thud when a monster is struck, a grunt when the hero is hurt,
+  a splash in `~` water, a snap when a `^` trap springs, a sweep down the `>`
+  stairs, and a wooden crack smashing through a `+` door. A `GameEvent.Step`
+  carries the tile's terrain to the audio layer, so new terrain SFX are one asset
+  plus one line in a map.
+- **Procedural retro SFX** — these effects are synthesised with `ffmpeg`
+  (sine blips, filtered noise, pitch sweeps) rather than recorded, fitting the
+  terminal aesthetic; sources live in `sound-effects/` and are easy to regenerate
+  or replace.
+- **One more layer, core untouched** — audio hangs off the event stream exactly
+  like the effects layer (`onEvent` fans out to both), behind an `expect`
+  `AudioEngine`. Desktop drives `javax.sound.sampled`; the web build ships a
+  silent no-op for now (browser autoplay rules + multi-megabyte WAVs are deferred).
+  `M` mutes.
+
 ## Milestone 4 — greater threats: ranged casters, door traps, ambushes
 
 - **Ranged casters** — the `w` wisp doesn't close in: with line of sight and in
@@ -93,6 +117,7 @@ composeApp/
       Monster.kt           # monster kinds (incl. ranged wisp), spawning, AI state
       Spell.kt             # spells, costs, and Bresenham line-of-fire / line-of-sight
       Effects.kt           # game events + particle model (text/bolt/burst) + colour ramps
+      Audio.kt             # audio layer fed by the same events; expect AudioEngine
       GameState.kt         # observable model: hero, monsters, combat, spells, traps, AI
     ui/            # Compose terminal renderer
       TerminalTheme.kt     # palette (terrain + monster colours)
@@ -101,8 +126,8 @@ composeApp/
       Panels.kt            # HERO / LEGEND / LOG / CONTROLS sections
       GameScreen.kt        # layout + keyboard input (move / cast / target)
     App.kt         # shared composable entry point
-  src/jvmMain/     # desktop window entry point + headless screenshot tool
-  src/wasmJsMain/  # browser entry point + index.html
+  src/jvmMain/     # desktop entry point, headless screenshot, javax.sound AudioEngine, sounds/*.wav
+  src/wasmJsMain/  # browser entry point + index.html + silent AudioEngine
   src/commonTest/  # generation / FOV / movement tests
 ```
 
@@ -148,4 +173,5 @@ visual checks). Optional second arg scripts N random-walk steps first:
 | Cycle target | `Tab` |
 | Descend | walk onto `>` |
 | Win | reach the relic `*` on depth 5 |
+| Mute | `M` (sound is desktop-only) |
 | New map | `R` |

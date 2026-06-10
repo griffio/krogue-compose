@@ -35,6 +35,9 @@ sealed interface GameEvent {
 
     /** A ranged monster winding up to fire — a brief pulse at its tile. */
     data class Charge(override val x: Int, override val y: Int, val kind: SpellKind) : GameEvent
+
+    /** The hero stepped onto a tile; the audio layer may sound the terrain. */
+    data class Step(override val x: Int, override val y: Int, val terrain: Terrain) : GameEvent
 }
 
 /**
@@ -122,6 +125,7 @@ class EffectsState {
             }
             is GameEvent.Charge ->
                 particles.add(Burst(event.x + 0.5f, event.y.toFloat(), 0.8f, event.kind, 0L, CHARGE_NANOS))
+            is GameEvent.Step -> {} // purely audible — no particle
         }
     }
 
